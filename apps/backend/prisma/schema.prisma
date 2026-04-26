@@ -1,0 +1,204 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  ADMIN
+  PARTNER
+}
+
+enum UserStatus {
+  PENDING
+  ACTIVE
+  BLOCKED
+}
+
+enum AnnouncementTemplateStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum EventStatus {
+  DRAFT
+  ACTIVE
+  CLOSED
+  ARCHIVED
+}
+
+model User {
+  id               String          @id @default(cuid())
+  loginId          String          @unique
+  email            String?         @unique
+  name             String
+  role             UserRole
+  status           UserStatus      @default(PENDING)
+  passwordHash     String?
+  parentUserId     String?
+  parentUser       User?           @relation("UserHierarchy", fields: [parentUserId], references: [id])
+  children         User[]          @relation("UserHierarchy")
+  createdById      String?
+  createdBy        User?           @relation("UserCreatedBy", fields: [createdById], references: [id])
+  createdUsers     User[]          @relation("UserCreatedBy")
+  inviteCodes      InviteCode[]
+  participations   Participation[]
+  announcementTemplates       AnnouncementTemplate[] @relation("AnnouncementTemplateCreatedBy")
+  eventAnnouncementsCreated   EventAnnouncement[]    @relation("EventAnnouncementCreatedBy")
+  eventAnnouncementsUpdated   EventAnnouncement[]    @relation("EventAnnouncementUpdatedBy")
+  eventCopyLogs               EventCopyLog[]
+  popupStates                 EventPopupState[]
+  eventRegistrationsCreated   EventRegistration[]    @relation("EventRegistrationCreatedBy")
+  eventParticipations         EventRegistration[]    @relation("EventRegistrationParticipant")
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  @@index([parentUserId])
+  @@index([role, status])
+}
+
+model InviteCode {
+  id           String   @id @default(cuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  codeHash     String
+  expiresAt    DateTime
+  usedAt       DateTime?
+  createdAt    DateTime @default(now())
+  createdById  String?
+
+  @@index([userId, expiresAt])
+}
+
+model Category {
+  id             String          @id @default(cuid())
+  name           String          @unique
+  description    String?
+  participations Participation[]
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+}
+
+model AnnouncementTemplate {
+  id                String                     @id @default(cuid())
+  name              String                     @unique
+  description       String?
+  kakaoTemplate     String
+  internalTemplate  String
+  status            AnnouncementTemplateStatus @default(INACTIVE)
+  createdById       String?
+  createdBy         User?                      @relation("AnnouncementTemplateCreatedBy", fields: [createdById], references: [id])
+  createdAt         DateTime                   @default(now())
+  updatedAt         DateTime                   @updatedAt
+  copyLogs          EventCopyLog[]
+
+  @@index([status])
+}
+
+model EventCategory {
+  id           String              @id @default(cuid())
+  name         String              @unique
+  description  String?
+  events       EventAnnouncement[]
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
+}
+
+model EventAnnouncement {
+  id                    String              @id @default(cuid())
+  title                 String
+  categoryId            String
+  category              EventCategory       @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  description           String?
+  location              String
+  startDate             DateTime
+  endDate               DateTime
+  registrationDeadline  DateTime
+  visibilityStartAt     DateTime
+  visibilityEndAt       DateTime
+  feePerPerson          Int
+  popupEnabled          Boolean             @default(false)
+  status                EventStatus         @default(DRAFT)
+  createdById           String?
+  createdBy             User?               @relation("EventAnnouncementCreatedBy", fields: [createdById], references: [id])
+  updatedById           String?
+  updatedBy             User?               @relation("EventAnnouncementUpdatedBy", fields: [updatedById], references: [id])
+  copyLogs              EventCopyLog[]
+  popupStates           EventPopupState[]
+  registrations         EventRegistration[]
+  createdAt             DateTime            @default(now())
+  updatedAt             DateTime            @updatedAt
+
+  @@index([categoryId, status])
+  @@index([visibilityStartAt, visibilityEndAt])
+  @@index([registrationDeadline, status])
+}
+
+model EventCopyLog {
+  id              String                @id @default(cuid())
+  eventId         String
+  event           EventAnnouncement     @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  templateId      String
+  template        AnnouncementTemplate  @relation(fields: [templateId], references: [id], onDelete: Restrict)
+  userId          String
+  user            User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  channel         String
+  generatedText   String
+  action          String                @default("GENERATED")
+  createdAt       DateTime              @default(now())
+
+  @@index([eventId, createdAt])
+  @@index([templateId, createdAt])
+  @@index([userId, createdAt])
+}
+
+model EventPopupState {
+  id             String             @id @default(cuid())
+  eventId        String
+  event          EventAnnouncement  @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  readAt         DateTime?
+  dismissedAt    DateTime?
+  dismissedUntil DateTime?
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+
+  @@unique([eventId, userId])
+  @@index([userId, dismissedUntil])
+}
+
+model EventRegistration {
+  id                String             @id @default(cuid())
+  eventId           String
+  event             EventAnnouncement  @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  createdByUserId   String
+  createdByUser     User               @relation("EventRegistrationCreatedBy", fields: [createdByUserId], references: [id], onDelete: Cascade)
+  participantUserId String
+  participantUser   User               @relation("EventRegistrationParticipant", fields: [participantUserId], references: [id], onDelete: Cascade)
+  note              String?
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+
+  @@unique([eventId, participantUserId])
+  @@index([createdByUserId, eventId])
+  @@index([participantUserId, eventId])
+}
+
+model Participation {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  categoryId  String
+  category    Category @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  occurredAt  DateTime
+  quantity    Int      @default(1)
+  note        String?
+  createdAt   DateTime @default(now())
+
+  @@index([userId, occurredAt])
+  @@index([categoryId, occurredAt])
+}

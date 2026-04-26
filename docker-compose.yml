@@ -1,0 +1,63 @@
+version: "3.9"
+
+services:
+  partnerhub-postgres:
+    image: postgres:16-alpine
+    container_name: partnerhub-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-partnerhub_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-partnerhub_password}
+      POSTGRES_DB: ${POSTGRES_DB:-partnerhub_db}
+    ports:
+      - "5440:5432"
+    volumes:
+      - partnerhub-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-partnerhub_user} -d ${POSTGRES_DB:-partnerhub_db}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  partnerhub-backend:
+    build:
+      context: .
+      dockerfile: docker/backend.Dockerfile
+    container_name: partnerhub-backend
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql://partnerhub_user:partnerhub_password@partnerhub-postgres:5432/partnerhub_db?schema=public}
+      BACKEND_PORT: ${BACKEND_PORT:-4100}
+      JWT_SECRET: ${JWT_SECRET:-change-me-in-production}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-1d}
+      FIRST_ACCESS_CODE_TTL_HOURS: ${FIRST_ACCESS_CODE_TTL_HOURS:-72}
+    depends_on:
+      partnerhub-postgres:
+        condition: service_healthy
+    ports:
+      - "4100:4100"
+
+  partnerhub-frontend:
+    build:
+      context: .
+      dockerfile: docker/frontend.Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:4100/api}
+        NEXT_PUBLIC_USE_MOCK: ${NEXT_PUBLIC_USE_MOCK:-false}
+    container_name: partnerhub-frontend
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      FRONTEND_PORT: ${FRONTEND_PORT:-3100}
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:4100/api}
+      NEXT_PUBLIC_USE_MOCK: ${NEXT_PUBLIC_USE_MOCK:-false}
+    depends_on:
+      - partnerhub-backend
+    ports:
+      - "3100:3100"
+
+volumes:
+  partnerhub-postgres-data:
