@@ -1,7 +1,7 @@
 FROM node:20-alpine AS base
 WORKDIR /app
 RUN apk add --no-cache openssl
-RUN corepack enable
+RUN corepack enable && corepack prepare pnpm@9.15.0 --activate
 
 FROM base AS deps
 COPY package.json pnpm-workspace.yaml turbo.json tsconfig.base.json ./
