@@ -4,12 +4,12 @@ import {
   NotFoundException,
   UnauthorizedException,
 } from "@nestjs/common";
-import { ConfigService } from "@nestjs/config";
 import * as bcrypt from "bcrypt";
-import { randomBytes } from "crypto";
 import { JwtService } from "@nestjs/jwt";
 import { UserRole, UserStatus } from "@partner-hub/shared";
 import { PrismaService } from "../prisma/prisma.service";
+
+const INITIAL_PASSWORD = "firstpwd";
 
 type UserRecord = {
   id: string;
@@ -19,6 +19,7 @@ type UserRecord = {
   role: UserRole;
   status: UserStatus;
   passwordHash: string | null;
+  mustChangePassword: boolean;
   parentUserId: string | null;
 };
 
@@ -27,7 +28,6 @@ export class AuthService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
-    private readonly configService: ConfigService,
   ) {}
 
   async login(loginId: string, password: string) {
@@ -37,8 +37,8 @@ export class AuthService {
       throw new UnauthorizedException("아이디 또는 비밀번호가 올바르지 않습니다.");
     }
 
-    if (user.status !== UserStatus.ACTIVE) {
-      throw new UnauthorizedException("활성 상태의 사용자만 로그인할 수 있습니다.");
+    if (user.status === UserStatus.BLOCKED) {
+      throw new UnauthorizedException("차단된 사용자는 로그인할 수 없습니다.");
     }
 
     const matches = await bcrypt.compare(password, user.passwordHash);
@@ -105,9 +105,9 @@ export class AuthService {
         where: { id: invite.id },
         data: { usedAt: new Date() },
       }),
-      this.prisma.user.update({
+      (this.prisma.user as any).update({
         where: { id: user.id },
-        data: { passwordHash, status: nextStatus },
+        data: { passwordHash, status: nextStatus, mustChangePassword: false },
       }),
     ]);
 
@@ -119,45 +119,34 @@ export class AuthService {
     return this.issueAuthPayload(refreshedUser);
   }
 
-  async adminResetPassword(userId: string, actorId: string) {
-    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+  async adminResetPassword(userId: string) {
+    const user = await (this.prisma.user as any).findUnique({ where: { id: userId } });
     if (!user) {
       throw new NotFoundException("User not found");
     }
 
-    const inviteCode = this.generateInviteCode();
-    const codeHash = await bcrypt.hash(inviteCode, 10);
-    const expiresAt = new Date(
-      Date.now() + this.configService.get<number>("FIRST_ACCESS_CODE_TTL_HOURS", 72) * 60 * 60 * 1000,
-    );
+    if (!user.passwordHash || user.mustChangePassword) {
+      throw new BadRequestException("비밀번호를 설정한 사용자만 초기화할 수 있습니다.");
+    }
 
-    await this.prisma.$transaction([
-      this.prisma.inviteCode.create({
-        data: {
-          userId: user.id,
-          codeHash,
-          expiresAt,
-          createdById: actorId,
-        },
-      }),
-      this.prisma.user.update({
-        where: { id: user.id },
-        data: {
-          passwordHash: null,
-          status: user.status === UserStatus.BLOCKED ? UserStatus.BLOCKED : UserStatus.PENDING,
-        },
-      }),
-    ]);
+    const passwordHash = await bcrypt.hash(INITIAL_PASSWORD, 10);
+    await (this.prisma.user as any).update({
+      where: { id: user.id },
+      data: {
+        passwordHash,
+        mustChangePassword: true,
+        status: user.status === UserStatus.BLOCKED ? UserStatus.BLOCKED : UserStatus.PENDING,
+      },
+    });
 
     return {
       userId: user.id,
-      inviteCode,
-      expiresAt,
+      initialPassword: INITIAL_PASSWORD,
       status: user.status === UserStatus.BLOCKED ? UserStatus.BLOCKED : UserStatus.PENDING,
     };
   }
 
-  async createInviteForNewUser(input: {
+  async createInitialPasswordUser(input: {
     loginId: string;
     email?: string | null;
     name: string;
@@ -170,11 +159,7 @@ export class AuthService {
       throw new BadRequestException("이미 사용 중인 아이디입니다.");
     }
 
-    const inviteCode = this.generateInviteCode();
-    const codeHash = await bcrypt.hash(inviteCode, 10);
-    const expiresAt = new Date(
-      Date.now() + this.configService.get<number>("FIRST_ACCESS_CODE_TTL_HOURS", 72) * 60 * 60 * 1000,
-    );
+    const passwordHash = await bcrypt.hash(INITIAL_PASSWORD, 10);
 
     const user = (await (this.prisma.user as any).create({
       data: {
@@ -183,23 +168,49 @@ export class AuthService {
         name: input.name,
         role: input.role,
         status: UserStatus.PENDING,
+        passwordHash,
+        mustChangePassword: true,
         parentUserId: input.parentUserId ?? null,
         createdById: input.createdById ?? null,
-        inviteCodes: {
-          create: {
-            codeHash,
-            expiresAt,
-            createdById: input.createdById ?? null,
-          },
-        },
       },
     })) as UserRecord;
 
     return {
       user: this.toUserPayload(user),
-      inviteCode,
-      expiresAt,
+      initialPassword: INITIAL_PASSWORD,
     };
+  }
+
+  async changePassword(userId: string, currentPassword: string, newPassword: string) {
+    const user = (await (this.prisma.user as any).findUnique({ where: { id: userId } })) as UserRecord | null;
+    if (!user || !user.passwordHash) {
+      throw new NotFoundException("User not found");
+    }
+
+    if (user.status === UserStatus.BLOCKED) {
+      throw new UnauthorizedException("차단된 사용자는 비밀번호를 변경할 수 없습니다.");
+    }
+
+    const matches = await bcrypt.compare(currentPassword, user.passwordHash);
+    if (!matches) {
+      throw new UnauthorizedException("현재 비밀번호가 올바르지 않습니다.");
+    }
+
+    if (currentPassword === newPassword) {
+      throw new BadRequestException("새 비밀번호는 현재 비밀번호와 달라야 합니다.");
+    }
+
+    const passwordHash = await bcrypt.hash(newPassword, 10);
+    const refreshedUser = (await (this.prisma.user as any).update({
+      where: { id: user.id },
+      data: {
+        passwordHash,
+        mustChangePassword: false,
+        status: UserStatus.ACTIVE,
+      },
+    })) as UserRecord;
+
+    return this.issueAuthPayload(refreshedUser);
   }
 
   private async issueAuthPayload(user: UserRecord) {
@@ -217,12 +228,9 @@ export class AuthService {
       name: user.name,
       role: user.role,
       status: user.status,
+      mustChangePassword: user.mustChangePassword,
       parentUserId: user.parentUserId,
     };
-  }
-
-  private generateInviteCode() {
-    return randomBytes(4).toString("hex").toUpperCase();
   }
 
   private async verifyFirstAccessToken(token: string): Promise<{ sub: string; inviteId: string; type: string }> {

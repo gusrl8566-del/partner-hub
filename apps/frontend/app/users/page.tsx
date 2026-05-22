@@ -137,7 +137,7 @@ export default function UsersPage() {
     const session = getSession();
     if (!session) return;
     const formData = new FormData(event.currentTarget);
-    const result = await apiFetch<{ inviteCode: string; user: { loginId: string } }>("/users", {
+    const result = await apiFetch<{ initialPassword: string; user: { loginId: string } }>("/users", {
       method: "POST",
       token: session.accessToken,
       body: {
@@ -147,7 +147,7 @@ export default function UsersPage() {
         parentUserId: formData.get("parentUserId") || undefined,
       },
     });
-    setInfo(`${result.user.loginId} 사용자가 생성되었습니다. 초대코드: ${result.inviteCode}`);
+    setInfo(`${result.user.loginId} 사용자가 생성되었습니다. 초기 비밀번호: ${result.initialPassword}`);
     event.currentTarget.reset();
     await loadUsers();
   }
@@ -157,7 +157,7 @@ export default function UsersPage() {
       <div className="grid gap-6 2xl:grid-cols-[380px_minmax(0,1fr)]">
         <Card className="h-fit">
           <h3 className="text-xl font-semibold">사용자 생성</h3>
-          <p className="mt-2 text-sm leading-7 text-[#6f6255]">관리자는 최상위 또는 하위 사용자를 생성하고 즉시 첫 접속 코드를 발급할 수 있습니다.</p>
+          <p className="mt-2 text-sm leading-7 text-[#6f6255]">관리자는 최상위 또는 하위 사용자를 생성하고 초기 비밀번호를 전달할 수 있습니다.</p>
           <form className="mt-6 space-y-4" onSubmit={createUser}>
             <Input name="name" placeholder="이름" required />
             <Input name="loginId" placeholder="아이디" required />

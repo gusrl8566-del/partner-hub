@@ -6,6 +6,7 @@ import { RolesGuard } from "../common/roles.guard";
 import { JwtAuthGuard } from "./jwt-auth.guard";
 import {
   AdminResetPasswordDto,
+  ChangePasswordDto,
   LoginDto,
   SetFirstAccessPasswordDto,
   VerifyFirstAccessCodeDto,
@@ -31,13 +32,19 @@ export class AuthController {
     return this.authService.setFirstAccessPassword(body.token, body.password);
   }
 
+  @Post("change-password")
+  @UseGuards(JwtAuthGuard)
+  changePassword(
+    @Body() body: ChangePasswordDto,
+    @CurrentUser() user: { id: string },
+  ) {
+    return this.authService.changePassword(user.id, body.currentPassword, body.newPassword);
+  }
+
   @Post("admin/reset-password")
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.ADMIN)
-  resetPassword(
-    @Body() body: AdminResetPasswordDto,
-    @CurrentUser() user: { id: string },
-  ) {
-    return this.authService.adminResetPassword(body.userId, user.id);
+  resetPassword(@Body() body: AdminResetPasswordDto) {
+    return this.authService.adminResetPassword(body.userId);
   }
 }

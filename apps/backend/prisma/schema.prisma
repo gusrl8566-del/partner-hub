@@ -38,6 +38,7 @@ model User {
   role             UserRole
   status           UserStatus      @default(PENDING)
   passwordHash     String?
+  mustChangePassword Boolean        @default(false)
   parentUserId     String?
   parentUser       User?           @relation("UserHierarchy", fields: [parentUserId], references: [id])
   children         User[]          @relation("UserHierarchy")

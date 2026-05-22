@@ -13,6 +13,7 @@ type MockUser = {
   role: UserRole;
   status: UserStatus;
   parentUserId: string | null;
+  mustChangePassword: boolean;
   password?: string | null;
   inviteCode?: string | null;
 };
@@ -116,7 +117,8 @@ type MockDb = {
 const KEY = "partner-hub-mock-db";
 const VERSION_KEY = "partner-hub-mock-db-version";
 const SESSION_KEY = "partner-hub-session";
-const DB_VERSION = "v9";
+const DB_VERSION = "v10";
+const INITIAL_PASSWORD = "firstpwd";
 
 function monthsAgo(months: number, day: number) {
   const date = new Date();
@@ -150,6 +152,7 @@ function buildGroupUsers(groupId: string, groupLoginId: string, groupName: strin
       role: "PARTNER" as const,
       status: "ACTIVE" as const,
       parentUserId: null,
+      mustChangePassword: false,
       password: "1234qwer",
       inviteCode: null,
     },
@@ -166,8 +169,9 @@ function buildGroupUsers(groupId: string, groupLoginId: string, groupName: strin
         status:
           blockedIndex === index ? "BLOCKED" as const : index === members.length - 1 ? "PENDING" as const : "ACTIVE" as const,
         parentUserId: level2Parent,
-        password: index === members.length - 1 ? null : "1234qwer",
-        inviteCode: index === members.length - 1 ? "1234QWER" : null,
+        mustChangePassword: index === members.length - 1,
+        password: index === members.length - 1 ? INITIAL_PASSWORD : "1234qwer",
+        inviteCode: null,
       };
     }),
   ];
@@ -224,6 +228,7 @@ function initialDb(): MockDb {
         role: "ADMIN",
         status: "ACTIVE",
         parentUserId: null,
+        mustChangePassword: false,
         password: "admin",
         inviteCode: null,
       },
@@ -750,7 +755,7 @@ export async function mockApiFetch<T>(path: string, options: { method?: string; 
 
   if (path === "/auth/login" && method === "POST") {
     const user = db.users.find((entry) => entry.loginId === body.loginId && entry.password === body.password);
-    if (!user || user.status !== "ACTIVE") {
+    if (!user || user.status === "BLOCKED") {
       throw new Error("아이디 또는 비밀번호가 올바르지 않습니다.");
     }
     return {
@@ -778,11 +783,57 @@ export async function mockApiFetch<T>(path: string, options: { method?: string; 
     }
     user.password = body.password;
     user.status = "ACTIVE";
+    user.mustChangePassword = false;
     user.inviteCode = null;
     saveDb(db);
     return {
       accessToken: "mock-token",
       user,
+    } as T;
+  }
+
+  if (path === "/auth/change-password" && method === "POST") {
+    if (!actor.password || actor.status === "BLOCKED") {
+      throw new Error("비밀번호를 변경할 수 없습니다.");
+    }
+    if (actor.password !== body.currentPassword) {
+      throw new Error("현재 비밀번호가 올바르지 않습니다.");
+    }
+    if (body.currentPassword === body.newPassword) {
+      throw new Error("새 비밀번호는 현재 비밀번호와 달라야 합니다.");
+    }
+
+    actor.password = body.newPassword;
+    actor.mustChangePassword = false;
+    actor.status = "ACTIVE";
+    saveDb(db);
+    return {
+      accessToken: "mock-token",
+      user: actor,
+    } as T;
+  }
+
+  if (path === "/auth/admin/reset-password" && method === "POST") {
+    if (actor.role !== "ADMIN") {
+      throw new Error("관리자만 비밀번호를 초기화할 수 있습니다.");
+    }
+
+    const user = db.users.find((entry) => entry.id === body.userId);
+    if (!user) {
+      throw new Error("사용자를 찾을 수 없습니다.");
+    }
+    if (!user.password || user.mustChangePassword) {
+      throw new Error("비밀번호를 설정한 사용자만 초기화할 수 있습니다.");
+    }
+
+    user.password = INITIAL_PASSWORD;
+    user.mustChangePassword = true;
+    user.status = user.status === "BLOCKED" ? "BLOCKED" : "PENDING";
+    saveDb(db);
+    return {
+      userId: user.id,
+      initialPassword: INITIAL_PASSWORD,
+      status: user.status,
     } as T;
   }
 
@@ -803,12 +854,13 @@ export async function mockApiFetch<T>(path: string, options: { method?: string; 
       role: body.role,
       status: "PENDING",
       parentUserId: body.parentUserId ?? null,
-      password: null,
-      inviteCode: "1234QWER",
+      mustChangePassword: true,
+      password: INITIAL_PASSWORD,
+      inviteCode: null,
     };
     db.users.unshift(user);
     saveDb(db);
-    return { user, inviteCode: user.inviteCode } as T;
+    return { user, initialPassword: INITIAL_PASSWORD } as T;
   }
 
   const childMatch = path.match(/^\/users\/([^/]+)\/children$/);
@@ -821,12 +873,13 @@ export async function mockApiFetch<T>(path: string, options: { method?: string; 
       role: "PARTNER",
       status: "PENDING",
       parentUserId: childMatch[1],
-      password: null,
-      inviteCode: "1234QWER",
+      mustChangePassword: true,
+      password: INITIAL_PASSWORD,
+      inviteCode: null,
     };
     db.users.unshift(user);
     saveDb(db);
-    return { user, inviteCode: user.inviteCode } as T;
+    return { user, initialPassword: INITIAL_PASSWORD } as T;
   }
 
   const descendantsMatch = path.match(/^\/users\/([^/]+)\/descendants$/);
@@ -857,7 +910,7 @@ export async function mockApiFetch<T>(path: string, options: { method?: string; 
   if (unblockMatch && method === "PATCH") {
     const user = db.users.find((entry) => entry.id === unblockMatch[1]);
     if (user) {
-      user.status = user.password ? "ACTIVE" : "PENDING";
+      user.status = user.password && !user.mustChangePassword ? "ACTIVE" : "PENDING";
       saveDb(db);
     }
     return user as T;

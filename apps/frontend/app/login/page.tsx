@@ -27,7 +27,7 @@ export default function LoginPage() {
       });
 
       setSession(result);
-      router.push("/dashboard");
+      router.push(result.user.mustChangePassword ? "/change-password" : "/dashboard");
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : "로그인에 실패했습니다.");
     }
@@ -50,7 +50,7 @@ export default function LoginPage() {
           </div>
           <div className="rounded-[28px] border border-border bg-white/70 p-5">
             <p className="text-xs uppercase tracking-[0.3em] text-[#8c7c6a]">접속 관리</p>
-            <p className="mt-3 text-sm leading-7 text-[#6f6255]">초대코드 기반 첫 접속, 비밀번호 설정, 차단, 관리자 초기화 흐름을 포함합니다.</p>
+            <p className="mt-3 text-sm leading-7 text-[#6f6255]">초기 비밀번호 로그인, 비밀번호 변경, 차단, 관리자 초기화 흐름을 포함합니다.</p>
           </div>
         </div>
       </section>
@@ -72,9 +72,9 @@ export default function LoginPage() {
           {error ? <p className="rounded-2xl bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p> : null}
           <Button type="submit" className="w-full">로그인</Button>
         </form>
-        <a className="mt-6 inline-block text-sm font-medium text-secondary underline underline-offset-4" href="/first-access">
-          첫 접속 또는 비밀번호 설정
-        </a>
+        <p className="mt-6 text-sm leading-7 text-[#6f6255]">
+          초기 비밀번호로 로그인하면 비밀번호 변경 화면으로 이동합니다.
+        </p>
       </Card>
     </main>
   );

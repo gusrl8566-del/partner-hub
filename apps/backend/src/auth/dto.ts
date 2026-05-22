@@ -26,6 +26,15 @@ export class SetFirstAccessPasswordDto {
   password!: string;
 }
 
+export class ChangePasswordDto {
+  @IsString()
+  currentPassword!: string;
+
+  @IsString()
+  @MinLength(8)
+  newPassword!: string;
+}
+
 export class AdminResetPasswordDto {
   @IsString()
   userId!: string;

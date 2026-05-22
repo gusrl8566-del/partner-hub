@@ -20,7 +20,16 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
 
   async validate(payload: { sub: string }) {
     const user = (await this.prisma.user.findUnique({ where: { id: payload.sub } })) as
-      | { id: string; loginId: string; email: string | null; name: string; role: string; status: UserStatus; parentUserId: string | null }
+      | {
+          id: string;
+          loginId: string;
+          email: string | null;
+          name: string;
+          role: string;
+          status: UserStatus;
+          mustChangePassword: boolean;
+          parentUserId: string | null;
+        }
       | null;
 
     if (!user || user.status === UserStatus.BLOCKED) {
@@ -34,6 +43,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       name: user.name,
       role: user.role,
       status: user.status,
+      mustChangePassword: user.mustChangePassword,
       parentUserId: user.parentUserId,
     };
   }

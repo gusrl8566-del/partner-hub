@@ -20,6 +20,8 @@ export default function UserDetailPage() {
   const [info, setInfo] = useState<string | null>(null);
   const [parentFeedback, setParentFeedback] = useState<string | null>(null);
   const [parentError, setParentError] = useState<string | null>(null);
+  const [resetFeedback, setResetFeedback] = useState<string | null>(null);
+  const [resetError, setResetError] = useState<string | null>(null);
 
   async function load() {
     const session = getSession();
@@ -55,7 +57,7 @@ export default function UserDetailPage() {
     const session = getSession();
     if (!session) return;
     const formData = new FormData(event.currentTarget);
-    const result = await apiFetch<{ inviteCode: string }>(`/users/${params.id}/children`, {
+    const result = await apiFetch<{ initialPassword: string }>(`/users/${params.id}/children`, {
       method: "POST",
       token: session.accessToken,
       body: {
@@ -63,7 +65,7 @@ export default function UserDetailPage() {
         name: formData.get("name"),
       },
     });
-    setInfo(`하위 파트너가 생성되었습니다. 초대코드: ${result.inviteCode}`);
+    setInfo(`하위 파트너가 생성되었습니다. 초기 비밀번호: ${result.initialPassword}`);
     event.currentTarget.reset();
     await load();
   }
@@ -87,6 +89,28 @@ export default function UserDetailPage() {
       await load();
     } catch (caught) {
       setParentError(caught instanceof Error ? caught.message : "상위 사용자 변경 중 오류가 발생했습니다.");
+    }
+  }
+
+  async function resetPassword() {
+    const session = getSession();
+    if (!session) return;
+    setResetFeedback(null);
+    setResetError(null);
+
+    try {
+      const result = await apiFetch<{ initialPassword: string }>(
+        "/auth/admin/reset-password",
+        {
+          method: "POST",
+          token: session.accessToken,
+          body: { userId: params.id },
+        },
+      );
+      setResetFeedback(`비밀번호가 초기화되었습니다. 초기 비밀번호: ${result.initialPassword}`);
+      await load();
+    } catch (caught) {
+      setResetError(caught instanceof Error ? caught.message : "비밀번호 초기화 중 오류가 발생했습니다.");
     }
   }
 
@@ -130,6 +154,9 @@ export default function UserDetailPage() {
             상위: {user?.parentUser ? `${user.parentUser.name} (${user.parentUser.loginId})` : "최상위"}
           </p>
           <p className="mt-2 text-sm">상태: {statusLabel(user?.status)}</p>
+          <p className="mt-2 text-sm text-[#6f6255]">
+            비밀번호: {user?.mustChangePassword ? "초기 비밀번호 변경 필요" : "설정 완료"}
+          </p>
           <div className="mt-6 flex flex-col gap-3 sm:flex-row">
             <Button onClick={() => toggleBlocked("block")}>차단</Button>
             <Button variant="secondary" onClick={() => toggleBlocked("unblock")}>차단 해제</Button>
@@ -157,9 +184,33 @@ export default function UserDetailPage() {
             {parentError ? <p className="mt-4 rounded-2xl bg-[#fff0f0] px-4 py-3 text-sm text-[#a12626]">{parentError}</p> : null}
           </Card>
         ) : null}
+        {isAdmin ? (
+          <Card>
+            <h3 className="text-xl font-semibold">비밀번호 초기화</h3>
+            <p className="mt-2 text-sm leading-7 text-[#6f6255]">
+              사용자가 직접 비밀번호를 설정한 계정만 초기 비밀번호로 되돌릴 수 있습니다.
+            </p>
+            <div className="mt-6">
+              <Button
+                type="button"
+                onClick={resetPassword}
+                disabled={!user || user.mustChangePassword}
+              >
+                초기 비밀번호로 재설정
+              </Button>
+            </div>
+            {user?.mustChangePassword ? (
+              <p className="mt-4 rounded-2xl bg-[#fff8e9] px-4 py-3 text-sm text-[#8a5a12]">
+                아직 초기 비밀번호 변경 전인 사용자는 초기화할 수 없습니다.
+              </p>
+            ) : null}
+            {resetFeedback ? <p className="mt-4 rounded-2xl bg-[#eef7f3] px-4 py-3 text-sm text-secondary">{resetFeedback}</p> : null}
+            {resetError ? <p className="mt-4 rounded-2xl bg-[#fff0f0] px-4 py-3 text-sm text-[#a12626]">{resetError}</p> : null}
+          </Card>
+        ) : null}
         <Card>
           <h3 className="text-xl font-semibold">직계 하위 파트너 생성</h3>
-          <p className="mt-2 text-sm leading-7 text-[#6f6255]">좁은 화면에서는 전체 폭으로, 큰 화면에서는 2단 패널 구성으로 자연스럽게 정렬됩니다.</p>
+          <p className="mt-2 text-sm leading-7 text-[#6f6255]">생성된 사용자는 초기 비밀번호로 로그인한 뒤 새 비밀번호를 설정합니다.</p>
           <form className="mt-6 space-y-4" onSubmit={createChild}>
             <Input name="name" placeholder="하위 파트너 이름" required />
             <Input name="loginId" placeholder="하위 파트너 아이디" required />

@@ -39,8 +39,12 @@ export function PageShell({
       router.replace("/login");
       return;
     }
+    if (nextSession.user.mustChangePassword && pathname !== "/change-password") {
+      router.replace("/change-password");
+      return;
+    }
     setSession(nextSession);
-  }, [router]);
+  }, [pathname, router]);
 
   if (!session) {
     return null;

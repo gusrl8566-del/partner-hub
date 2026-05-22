@@ -34,7 +34,7 @@ export class UsersService {
       await this.ensureUserExists(input.parentUserId);
     }
 
-    return this.authService.createInviteForNewUser({
+    return this.authService.createInitialPasswordUser({
       ...input,
       createdById: actor.id,
     });
@@ -48,7 +48,7 @@ export class UsersService {
     }
 
     if (actor.role === UserRole.ADMIN || actor.id === parentUserId) {
-      return this.authService.createInviteForNewUser({
+      return this.authService.createInitialPasswordUser({
         loginId: input.loginId,
         name: input.name,
         role: UserRole.PARTNER,

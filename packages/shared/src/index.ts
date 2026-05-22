@@ -28,6 +28,7 @@ export interface AuthUser {
   name: string;
   role: UserRole;
   status: UserStatus;
+  mustChangePassword: boolean;
   parentUserId: string | null;
 }
 
