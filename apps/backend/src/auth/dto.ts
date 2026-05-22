@@ -55,3 +55,9 @@ export class CreateChildUserDto {
   @IsString()
   name!: string;
 }
+
+export class ReparentUserDto {
+  @IsOptional()
+  @IsString()
+  parentUserId?: string | null;
+}

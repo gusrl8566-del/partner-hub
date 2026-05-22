@@ -863,6 +863,37 @@ export async function mockApiFetch<T>(path: string, options: { method?: string; 
     return user as T;
   }
 
+  const parentMatch = path.match(/^\/users\/([^/]+)\/parent$/);
+  if (parentMatch && method === "PATCH") {
+    const user = db.users.find((entry) => entry.id === parentMatch[1]);
+    if (!user) {
+      throw new Error("사용자를 찾을 수 없습니다.");
+    }
+
+    const nextParentUserId = typeof body.parentUserId === "string" && body.parentUserId.trim()
+      ? body.parentUserId.trim()
+      : null;
+
+    if (nextParentUserId === user.id) {
+      throw new Error("자기 자신을 상위 사용자로 지정할 수 없습니다.");
+    }
+
+    if (nextParentUserId) {
+      const parent = db.users.find((entry) => entry.id === nextParentUserId);
+      if (!parent) {
+        throw new Error("상위 사용자를 찾을 수 없습니다.");
+      }
+
+      if (getAccessibleUserIds(db, user.id).includes(nextParentUserId)) {
+        throw new Error("자기 자신 또는 하위 사용자를 상위 사용자로 지정할 수 없습니다.");
+      }
+    }
+
+    user.parentUserId = nextParentUserId;
+    saveDb(db);
+    return user as T;
+  }
+
   if (path === "/categories" && method === "GET") {
     return db.categories as T;
   }

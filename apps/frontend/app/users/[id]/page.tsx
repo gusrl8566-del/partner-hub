@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import { PageShell } from "@/components/page-shell";
 import { Button } from "@/components/ui/button";
@@ -14,17 +14,26 @@ export default function UserDetailPage() {
   const params = useParams<{ id: string }>();
   const [user, setUser] = useState<any>(null);
   const [tree, setTree] = useState<any>(null);
+  const [allUsers, setAllUsers] = useState<any[]>([]);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [selectedParentId, setSelectedParentId] = useState("");
   const [info, setInfo] = useState<string | null>(null);
+  const [parentFeedback, setParentFeedback] = useState<string | null>(null);
+  const [parentError, setParentError] = useState<string | null>(null);
 
   async function load() {
     const session = getSession();
     if (!session) return;
-    const [userResult, treeResult] = await Promise.all([
-      apiFetch(`/users/${params.id}`, { token: session.accessToken }),
-      apiFetch(`/users/${params.id}/descendants`, { token: session.accessToken }),
+    const [userResult, treeResult, usersResult] = await Promise.all([
+      apiFetch<any>(`/users/${params.id}`, { token: session.accessToken }),
+      apiFetch<any>(`/users/${params.id}/descendants`, { token: session.accessToken }),
+      session.user.role === "ADMIN" ? apiFetch<any[]>("/users", { token: session.accessToken }) : Promise.resolve([]),
     ]);
     setUser(userResult);
     setTree(treeResult);
+    setAllUsers(usersResult);
+    setIsAdmin(session.user.role === "ADMIN");
+    setSelectedParentId(userResult.parentUserId ?? "");
   }
 
   useEffect(() => {
@@ -59,6 +68,41 @@ export default function UserDetailPage() {
     await load();
   }
 
+  async function updateParent(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const session = getSession();
+    if (!session) return;
+    setParentFeedback(null);
+    setParentError(null);
+
+    try {
+      await apiFetch(`/users/${params.id}/parent`, {
+        method: "PATCH",
+        token: session.accessToken,
+        body: {
+          parentUserId: selectedParentId || null,
+        },
+      });
+      setParentFeedback("상위 사용자를 변경했습니다.");
+      await load();
+    } catch (caught) {
+      setParentError(caught instanceof Error ? caught.message : "상위 사용자 변경 중 오류가 발생했습니다.");
+    }
+  }
+
+  function flattenTree(nodes: any[]): any[] {
+    return nodes.flatMap((node) => [node, ...flattenTree(node.children ?? [])]);
+  }
+
+  const unavailableParentIds = useMemo(
+    () => new Set([params.id, ...flattenTree(tree?.descendants ?? []).map((node) => node.id)]),
+    [params.id, tree],
+  );
+  const parentOptions = useMemo(
+    () => allUsers.filter((candidate) => !unavailableParentIds.has(candidate.id)),
+    [allUsers, unavailableParentIds],
+  );
+
   function renderTree(nodes: any[]) {
     return (
       <ul className="space-y-3 pl-2 sm:pl-4">
@@ -82,12 +126,37 @@ export default function UserDetailPage() {
         <Card>
           <h3 className="text-xl font-semibold">{user?.name ?? "불러오는 중..."}</h3>
           <p className="mt-2 text-sm text-[#6f6255]">아이디: {user?.loginId}</p>
+          <p className="mt-2 text-sm text-[#6f6255]">
+            상위: {user?.parentUser ? `${user.parentUser.name} (${user.parentUser.loginId})` : "최상위"}
+          </p>
           <p className="mt-2 text-sm">상태: {statusLabel(user?.status)}</p>
           <div className="mt-6 flex flex-col gap-3 sm:flex-row">
             <Button onClick={() => toggleBlocked("block")}>차단</Button>
             <Button variant="secondary" onClick={() => toggleBlocked("unblock")}>차단 해제</Button>
           </div>
         </Card>
+        {isAdmin ? (
+          <Card>
+            <h3 className="text-xl font-semibold">상위 사용자 변경</h3>
+            <form className="mt-6 space-y-4" onSubmit={updateParent}>
+              <select
+                className="min-h-12 w-full rounded-[1.25rem] border border-border bg-white/85 px-4 py-3 text-sm"
+                value={selectedParentId}
+                onChange={(event) => setSelectedParentId(event.target.value)}
+              >
+                <option value="">최상위</option>
+                {parentOptions.map((parent) => (
+                  <option key={parent.id} value={parent.id}>
+                    {parent.name} ({parent.loginId})
+                  </option>
+                ))}
+              </select>
+              <Button type="submit">상위 변경</Button>
+            </form>
+            {parentFeedback ? <p className="mt-4 rounded-2xl bg-[#eef7f3] px-4 py-3 text-sm text-secondary">{parentFeedback}</p> : null}
+            {parentError ? <p className="mt-4 rounded-2xl bg-[#fff0f0] px-4 py-3 text-sm text-[#a12626]">{parentError}</p> : null}
+          </Card>
+        ) : null}
         <Card>
           <h3 className="text-xl font-semibold">직계 하위 파트너 생성</h3>
           <p className="mt-2 text-sm leading-7 text-[#6f6255]">좁은 화면에서는 전체 폭으로, 큰 화면에서는 2단 패널 구성으로 자연스럽게 정렬됩니다.</p>

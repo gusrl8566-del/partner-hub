@@ -3,7 +3,7 @@ import { UserRole } from "@partner-hub/shared";
 import { CurrentUser } from "../common/current-user.decorator";
 import { Roles } from "../common/roles.decorator";
 import { RolesGuard } from "../common/roles.guard";
-import { CreateChildUserDto, CreateUserDto } from "../auth/dto";
+import { CreateChildUserDto, CreateUserDto, ReparentUserDto } from "../auth/dto";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { UsersService } from "./users.service";
 
@@ -38,6 +38,12 @@ export class UsersController {
   @Roles(UserRole.ADMIN)
   unblock(@Param("id") id: string) {
     return this.usersService.unblockUser(id);
+  }
+
+  @Patch(":id/parent")
+  @Roles(UserRole.ADMIN)
+  updateParent(@Param("id") id: string, @Body() body: ReparentUserDto) {
+    return this.usersService.updateParent(id, body.parentUserId ?? null);
   }
 
   @Post(":id/children")

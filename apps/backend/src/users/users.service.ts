@@ -1,4 +1,4 @@
-import { ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import { UserRole, UserStatus } from "@partner-hub/shared";
 import { PrismaService } from "../prisma/prisma.service";
 import { AuthService } from "../auth/auth.service";
@@ -104,6 +104,29 @@ export class UsersService {
     return this.prisma.user.update({
       where: { id },
       data: { status: user.passwordHash ? UserStatus.ACTIVE : UserStatus.PENDING },
+    });
+  }
+
+  async updateParent(id: string, parentUserId: string | null) {
+    await this.ensureUserExists(id);
+    const nextParentUserId = parentUserId?.trim() || null;
+
+    if (nextParentUserId === id) {
+      throw new BadRequestException("자기 자신을 상위 사용자로 지정할 수 없습니다.");
+    }
+
+    if (nextParentUserId) {
+      await this.ensureUserExists(nextParentUserId);
+      const blockedParentIds = await this.getSelfAndDescendantIds(id);
+
+      if (blockedParentIds.includes(nextParentUserId)) {
+        throw new BadRequestException("자기 자신 또는 하위 사용자를 상위 사용자로 지정할 수 없습니다.");
+      }
+    }
+
+    return this.prisma.user.update({
+      where: { id },
+      data: { parentUserId: nextParentUserId },
     });
   }
 
