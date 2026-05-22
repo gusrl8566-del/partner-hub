@@ -14,6 +14,7 @@ import { roleLabel, statusLabel } from "@/lib/display";
 export default function UsersPage() {
   const [users, setUsers] = useState<any[]>([]);
   const [info, setInfo] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const [collapsedIds, setCollapsedIds] = useState<string[]>([]);
 
   async function loadUsers() {
@@ -136,20 +137,28 @@ export default function UsersPage() {
     event.preventDefault();
     const session = getSession();
     if (!session) return;
-    const formData = new FormData(event.currentTarget);
-    const result = await apiFetch<{ initialPassword: string; user: { loginId: string } }>("/users", {
-      method: "POST",
-      token: session.accessToken,
-      body: {
-        loginId: formData.get("loginId"),
-        name: formData.get("name"),
-        role: formData.get("role"),
-        parentUserId: formData.get("parentUserId") || undefined,
-      },
-    });
-    setInfo(`${result.user.loginId} 사용자가 생성되었습니다. 초기 비밀번호: ${result.initialPassword}`);
-    event.currentTarget.reset();
-    await loadUsers();
+    const form = event.currentTarget;
+    const formData = new FormData(form);
+    setInfo(null);
+    setError(null);
+
+    try {
+      const result = await apiFetch<{ initialPassword: string; user: { loginId: string } }>("/users", {
+        method: "POST",
+        token: session.accessToken,
+        body: {
+          loginId: formData.get("loginId"),
+          name: formData.get("name"),
+          role: formData.get("role"),
+          parentUserId: formData.get("parentUserId") || undefined,
+        },
+      });
+      setInfo(`${result.user.loginId} 사용자가 생성되었습니다. 초기 비밀번호: ${result.initialPassword}`);
+      form.reset();
+      await loadUsers();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "사용자 생성 중 오류가 발생했습니다.");
+    }
   }
 
   return (
@@ -169,6 +178,7 @@ export default function UsersPage() {
             <Button type="submit">생성</Button>
           </form>
           {info ? <p className="mt-4 rounded-2xl bg-[#eef7f3] px-4 py-3 text-sm text-secondary">{info}</p> : null}
+          {error ? <p className="mt-4 rounded-2xl bg-[#fff0f0] px-4 py-3 text-sm text-[#a12626]">{error}</p> : null}
         </Card>
         <Card className="min-w-0">
           <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">

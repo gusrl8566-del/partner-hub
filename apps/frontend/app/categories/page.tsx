@@ -45,7 +45,8 @@ export default function CategoriesPage() {
       router.replace("/dashboard");
       return;
     }
-    const formData = new FormData(event.currentTarget);
+    const form = event.currentTarget;
+    const formData = new FormData(form);
     await apiFetch("/categories", {
       method: "POST",
       token: session.accessToken,
@@ -54,7 +55,7 @@ export default function CategoriesPage() {
         description: formData.get("description"),
       },
     });
-    event.currentTarget.reset();
+    form.reset();
     await load();
   }
 

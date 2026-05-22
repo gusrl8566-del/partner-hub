@@ -51,7 +51,8 @@ export default function ParticipationsPage() {
     event.preventDefault();
     const session = getSession();
     if (!session) return;
-    const formData = new FormData(event.currentTarget);
+    const form = event.currentTarget;
+    const formData = new FormData(form);
     const uniqueParticipantIds = [...new Set(participantIds.filter(Boolean))];
     await apiFetch("/participations", {
       method: "POST",
@@ -63,7 +64,7 @@ export default function ParticipationsPage() {
         participantUserIds: uniqueParticipantIds,
       },
     });
-    event.currentTarget.reset();
+    form.reset();
     if (users.length) {
       setParticipantIds([users[0].id]);
     }

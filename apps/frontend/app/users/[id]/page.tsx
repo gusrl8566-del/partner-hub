@@ -18,6 +18,7 @@ export default function UserDetailPage() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [selectedParentId, setSelectedParentId] = useState("");
   const [info, setInfo] = useState<string | null>(null);
+  const [childError, setChildError] = useState<string | null>(null);
   const [parentFeedback, setParentFeedback] = useState<string | null>(null);
   const [parentError, setParentError] = useState<string | null>(null);
   const [resetFeedback, setResetFeedback] = useState<string | null>(null);
@@ -56,18 +57,26 @@ export default function UserDetailPage() {
     event.preventDefault();
     const session = getSession();
     if (!session) return;
-    const formData = new FormData(event.currentTarget);
-    const result = await apiFetch<{ initialPassword: string }>(`/users/${params.id}/children`, {
-      method: "POST",
-      token: session.accessToken,
-      body: {
-        loginId: formData.get("loginId"),
-        name: formData.get("name"),
-      },
-    });
-    setInfo(`하위 파트너가 생성되었습니다. 초기 비밀번호: ${result.initialPassword}`);
-    event.currentTarget.reset();
-    await load();
+    const form = event.currentTarget;
+    const formData = new FormData(form);
+    setInfo(null);
+    setChildError(null);
+
+    try {
+      const result = await apiFetch<{ initialPassword: string }>(`/users/${params.id}/children`, {
+        method: "POST",
+        token: session.accessToken,
+        body: {
+          loginId: formData.get("loginId"),
+          name: formData.get("name"),
+        },
+      });
+      setInfo(`하위 파트너가 생성되었습니다. 초기 비밀번호: ${result.initialPassword}`);
+      form.reset();
+      await load();
+    } catch (caught) {
+      setChildError(caught instanceof Error ? caught.message : "하위 파트너 생성 중 오류가 발생했습니다.");
+    }
   }
 
   async function updateParent(event: FormEvent<HTMLFormElement>) {
@@ -217,6 +226,7 @@ export default function UserDetailPage() {
             <Button type="submit">하위 파트너 생성</Button>
           </form>
           {info ? <p className="mt-4 rounded-2xl bg-[#eef7f3] px-4 py-3 text-sm text-secondary">{info}</p> : null}
+          {childError ? <p className="mt-4 rounded-2xl bg-[#fff0f0] px-4 py-3 text-sm text-[#a12626]">{childError}</p> : null}
         </Card>
       </div>
       <Card className="min-w-0">
